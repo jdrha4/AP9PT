@@ -287,7 +287,7 @@ private struct BottomBar: View {
 
 private struct SimpleHomeView: View {
     @StateObject private var viewModel = ViewModel()
-    @AppStorage("savedCity") private var savedCity: String = "jabalpur"
+    @AppStorage("savedCity") private var savedCity: String = "Prague"
     
     let onTapSettings: () -> Void
     let scrollDisabled: Bool
@@ -434,8 +434,8 @@ private struct SearchView: View {
     
     // Layout constants
     private let fieldBottomPadding: CGFloat = 8
-    private let fieldEstimatedHeight: CGFloat = 44
-    private let fieldMaxWidth: CGFloat = 520
+    private let fieldEstimatedHeight: CGFloat = 56 // increased height
+    private let fieldMaxWidth: CGFloat = 300
     private let searchSectionBottomSpacing: CGFloat = 24 // extra space below the search bar
     
     // Accept whether vertical scroll should be disabled while horizontally dragging
@@ -446,37 +446,38 @@ private struct SearchView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 ZStack {
                     VStack {
-                        Text("Search")
-                            .font(.largeTitle.weight(.semibold))
-                            .foregroundStyle(.white.gradient)
-                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
-                            .padding(.top, geo.safeAreaInsets.top + 15)
-                            .padding(.bottom, 20)
+//                        Text("Search")
+//                            .font(.largeTitle.weight(.semibold))
+//                            .foregroundStyle(.white.gradient)
+//                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
+//                            .padding(.top, geo.safeAreaInsets.top + 15)
+//                            .padding(.bottom, 20)
                         
                         VStack(spacing: 0) {
                             HStack {
-                                TextField("Enter city name", text: $city)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.horizontal)
-                                    .frame(maxWidth: fieldMaxWidth)
-                                    .focused($searchFocused)
-                                    .submitLabel(.search)
-                                    .onTapGesture { searchFocused = true }
-                                    .onSubmit {
-                                        searchFocused = false
-                                        viewModel.cancelSuggestions()
-                                        viewModel.fetch(city: city.isEmpty ? "jabalpur" : city)
+                                SearchBarField(
+                                    text: $city,
+                                    placeholder: "Search",
+                                    isFocused: $searchFocused,
+                                    submitLabel: .search
+                                )
+                                .frame(maxWidth: fieldMaxWidth)
+                                .onSubmit {
+                                    searchFocused = false
+                                    viewModel.cancelSuggestions()
+                                    viewModel.fetch(city: city.isEmpty ? "Prague" : city)
+                                }
+                                .onChange(of: city) { newValue in
+                                    let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !suppressSearch {
+                                        viewModel.searchCities(query: q)
                                     }
-                                    .onChange(of: city) { newValue in
-                                        // Trigger suggestions on any edit; ViewModel handles <2 chars by clearing
-                                        let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if !suppressSearch {
-                                            viewModel.searchCities(query: q)
-                                        }
-                                    }
+                                }
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, fieldBottomPadding)
+                            .padding(.top, geo.safeAreaInsets.top + 15)
+                            .padding(.bottom, 20)
+//                            .padding(.vertical, fieldBottomPadding)
                         }
                         .padding(.horizontal)
                         .overlay(alignment: .top) {
@@ -580,7 +581,7 @@ private struct SearchView: View {
             }
             .onAppear {
                 if viewModel.apidata == nil {
-                    viewModel.fetch(city: "jabalpur")
+                    viewModel.fetch(city: "Prague")
                 }
             }
         }
@@ -617,7 +618,7 @@ private struct SearchView: View {
 
 private struct SettingsView: View {
     @StateObject private var viewModel = ViewModel()
-    @AppStorage("savedCity") private var savedCity: String = "jabalpur"
+    @AppStorage("savedCity") private var savedCity: String = "Prague"
     @State private var tempCity: String = "" // staging text for saving
     
     @FocusState private var changeFocused: Bool
@@ -628,8 +629,8 @@ private struct SettingsView: View {
     
     // Layout constants
     private let fieldBottomPadding: CGFloat = 8
-    private let fieldEstimatedHeight: CGFloat = 44
-    private let fieldMaxWidth: CGFloat = 520
+    private let fieldEstimatedHeight: CGFloat = 56 // increased height
+    private let fieldMaxWidth: CGFloat = 420 // narrower
     
     var body: some View {
         GeometryReader { geo in
@@ -653,13 +654,13 @@ private struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     
                     Text("Settings")
-                        .font(.largeTitle.weight(.black))
+                        .font(.largeTitle.weight(.semibold))
                         .foregroundStyle(.white.gradient)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 4)
                         .padding(.bottom, 20)
                     
-                    // Saved city card with search/save (Save button removed)
+                    // Saved city card with search/save
                     VStack(spacing: 12) {
                         Text("Default City")
                             .font(.headline)
@@ -671,29 +672,29 @@ private struct SettingsView: View {
                         
                         VStack(spacing: 0) {
                             HStack {
-                                TextField("Change city", text: $tempCity)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.horizontal)
-                                    .frame(maxWidth: fieldMaxWidth)
-                                    .focused($changeFocused)
-                                    .submitLabel(.done)
-                                    .onTapGesture { changeFocused = true }
-                                    .onSubmit {
-                                        changeFocused = false
-                                        viewModel.cancelSuggestions()
-                                        let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if !trimmed.isEmpty {
-                                            savedCity = trimmed
-                                            viewModel.fetch(city: savedCity)
-                                            tempCity = ""
-                                        }
+                                SearchBarField(
+                                    text: $tempCity,
+                                    placeholder: "Change city",
+                                    isFocused: $changeFocused,
+                                    submitLabel: .done
+                                )
+                                .frame(maxWidth: fieldMaxWidth)
+                                .onSubmit {
+                                    changeFocused = false
+                                    viewModel.cancelSuggestions()
+                                    let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !trimmed.isEmpty {
+                                        savedCity = trimmed
+                                        viewModel.fetch(city: savedCity)
+                                        tempCity = ""
                                     }
-                                    .onChange(of: tempCity) { newValue in
-                                        let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if !suppressSearch {
-                                            viewModel.searchCities(query: q)
-                                        }
+                                }
+                                .onChange(of: tempCity) { newValue in
+                                    let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !suppressSearch {
+                                        viewModel.searchCities(query: q)
                                     }
+                                }
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, fieldBottomPadding)
@@ -857,6 +858,46 @@ private struct SuggestionsList: View {
         } else {
             return "\(s.name), \(s.country)"
         }
+    }
+}
+
+// MARK: - Reusable Search Bar Field
+
+private struct SearchBarField: View {
+    @Binding var text: String
+    let placeholder: String
+    var isFocused: FocusState<Bool>.Binding
+    var submitLabel: SubmitLabel = .search
+    
+    // Appearance
+    private let cornerRadius: CGFloat = 22
+    private let verticalPadding: CGFloat = 14
+    private let horizontalPadding: CGFloat = 16
+    
+    var body: some View {
+        TextField(
+            text: $text,
+            prompt: Text(placeholder).foregroundColor(.white)
+        ) {
+            EmptyView()
+        }
+        .font(.title3.weight(.semibold))
+        .multilineTextAlignment(.center)
+        .foregroundColor(.white)
+        .padding(.vertical, verticalPadding)
+        .padding(.horizontal, horizontalPadding)
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .stroke(Color.white.opacity(0.28), lineWidth: 1)
+        )
+        .focused(isFocused)
+        .submitLabel(submitLabel)
+        .textInputAutocapitalization(.words)
+        .disableAutocorrection(true)
     }
 }
 
