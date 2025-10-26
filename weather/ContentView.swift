@@ -252,6 +252,9 @@ private struct HomeView: View {
     @FocusState private var changeFocused: Bool
     @State private var suppressSearch: Bool = false
     
+    // Track when a scroll gesture is dismissing the keyboard
+    @State private var isScrollDismissingKeyboard: Bool = false
+    
     // Accept whether vertical scroll should be disabled while horizontally dragging
     let scrollDisabled: Bool
     
@@ -400,6 +403,26 @@ private struct HomeView: View {
             .scrollDisabled(scrollDisabled)
             .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(.keyboard, edges: .bottom)
+            // Detect a scroll drag while the field is focused to mark intent to dismiss by scroll
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { _ in
+                        if changeFocused {
+                            isScrollDismissingKeyboard = true
+                        }
+                    }
+                    .onEnded { _ in
+                        // Keep the flag; it will be cleared on keyboard hide notification
+                    }
+            )
+            // Clear the field only when keyboard hides due to a scroll dismissal
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                if isScrollDismissingKeyboard {
+                    tempCity = ""
+                    viewModel.cancelSuggestions()
+                    isScrollDismissingKeyboard = false
+                }
+            }
             .onAppear {
                 // Always load the saved city at app start
                 viewModel.fetch(city: savedCity)
@@ -441,6 +464,9 @@ private struct SearchView: View {
     @State private var city: String = ""
     @FocusState private var searchFocused: Bool
     @State private var suppressSearch: Bool = false
+    
+    // Track when a scroll gesture is dismissing the keyboard
+    @State private var isScrollDismissingKeyboard: Bool = false
     
     // Layout constants
     private let fieldBottomPadding: CGFloat = 8
@@ -564,6 +590,26 @@ private struct SearchView: View {
                 )
                 .ignoresSafeArea()
             )
+            // Detect a scroll drag while the field is focused to mark intent to dismiss by scroll
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { _ in
+                        if searchFocused {
+                            isScrollDismissingKeyboard = true
+                        }
+                    }
+                    .onEnded { _ in
+                        // Keep the flag; it will be cleared on keyboard hide notification
+                    }
+            )
+            // Clear the field only when keyboard hides due to a scroll dismissal
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                if isScrollDismissingKeyboard {
+                    city = ""
+                    viewModel.cancelSuggestions()
+                    isScrollDismissingKeyboard = false
+                }
+            }
             .onAppear {
                 if viewModel.apidata == nil {
                     viewModel.fetch(city: "jabalpur")
