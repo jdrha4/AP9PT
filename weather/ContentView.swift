@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var dragOffset: CGFloat = 0 // live horizontal drag offset
     @State private var isHorizontalDrag: Bool = false // lock once we detect horizontal intent
     @State private var isKeyboardVisible: Bool = false
+    @State private var isShowingSettings: Bool = false
     
     // Swipe configuration
     private let swipeThresholdRatio: CGFloat = 0.25 // percent of width required to commit
@@ -22,10 +23,8 @@ struct ContentView: View {
             // The horizontal drag gesture used for tab preview/switching
             let horizontalDrag = DragGesture(minimumDistance: 10, coordinateSpace: .local)
                 .onChanged { value in
-                    // If the keyboard is up, do not engage horizontal at all — let vertical and text fields win.
-                    if isKeyboardVisible {
-                        return
-                    }
+                    // If the keyboard is up, or settings overlay is visible, do not engage horizontal at all.
+                    if isKeyboardVisible || isShowingSettings { return }
                     
                     let dx = value.translation.width
                     let dy = value.translation.height
@@ -40,9 +39,7 @@ struct ContentView: View {
                         }
                     }
                     
-                    // Once locked, only allow dragging toward an available neighbor:
-                    // - From Home, only allow left swipes (to Search).
-                    // - From Search, only allow right swipes (to Home).
+                    // Once locked, only allow dragging toward an available neighbor (Home <-> Search).
                     switch currentTab {
                     case .home:
                         dragOffset = min(0, dx) // clamp to <= 0 (left only)
@@ -52,7 +49,7 @@ struct ContentView: View {
                 }
                 .onEnded { value in
                     // If we never locked horizontally (e.g., keyboard visible or purely vertical), nothing to do.
-                    if !isHorizontalDrag {
+                    if !isHorizontalDrag || isShowingSettings {
                         dragOffset = 0
                         return
                     }
@@ -110,16 +107,35 @@ struct ContentView: View {
                 }
             
             ZStack {
-                // Both views are always in the hierarchy; we position them with offsets.
-                HomeView(scrollDisabled: !isKeyboardVisible) // disable vertical by default; enable when keyboard is visible
+                // Base tabs stack (Home and Search)
+                ZStack {
+                    // Home (simple)
+                    SimpleHomeView(onTapSettings: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isShowingSettings = true
+                            dragOffset = 0
+                        }
+                    }, scrollDisabled: !isKeyboardVisible)
                     .offset(x: homeOffset(width: width))
-                    .allowsHitTesting(currentTab == .home && dragOffset == 0)
+                    .allowsHitTesting(!isShowingSettings && currentTab == .home && dragOffset == 0)
                     .accessibilityHidden(currentTab != .home && dragOffset == 0)
-                
-                SearchView(scrollDisabled: !isKeyboardVisible) // disable vertical by default; enable when keyboard is visible
-                    .offset(x: searchOffset(width: width))
-                    .allowsHitTesting(currentTab == .search && dragOffset == 0)
-                    .accessibilityHidden(currentTab != .search && dragOffset == 0)
+                    
+                    // Search (unchanged)
+                    SearchView(scrollDisabled: !isKeyboardVisible)
+                        .offset(x: searchOffset(width: width))
+                        .allowsHitTesting(!isShowingSettings && currentTab == .search && dragOffset == 0)
+                        .accessibilityHidden(currentTab != .search && dragOffset == 0)
+                }
+                // Settings overlay fades above the Home tab
+                if isShowingSettings {
+                    SettingsView(onDismiss: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            isShowingSettings = false
+                        }
+                    })
+                    .transition(.opacity)
+                    .zIndex(10)
+                }
             }
             // We control animations manually; do not implicitly animate on currentTab changes.
             .contentShape(Rectangle()) // allow hits across the whole area
@@ -150,6 +166,7 @@ struct ContentView: View {
                 .frame(height: 50)
                 .background(.ultraThinMaterial)
                 .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(!isShowingSettings) // prevent taps while settings overlay is up
             }
         }
         // Track keyboard visibility to switch gesture behavior
@@ -164,30 +181,23 @@ struct ContentView: View {
         }
     }
     
-    // MARK: - Offsets
+    // MARK: - Offsets (Home <-> Search only)
     
     private func homeOffset(width: CGFloat) -> CGFloat {
-        // Base positions when idle:
-        // - If current is home: home at 0, search at +width.
-        // - If current is search: home at -width, search at 0.
         switch currentTab {
         case .home:
-            // While dragging left, home tracks the finger to the left.
-            return dragOffset // dragOffset <= 0
+            return dragOffset // <= 0 when dragging left
         case .search:
-            // While dragging right (to return), home starts at -width and comes in with drag.
-            return -width + max(0, dragOffset)
+            return -width + max(0, dragOffset) // comes in when dragging right
         }
     }
     
     private func searchOffset(width: CGFloat) -> CGFloat {
         switch currentTab {
         case .home:
-            // Search starts off-screen right at +width and comes in with left drag.
-            return width + min(0, dragOffset)
+            return width + min(0, dragOffset) // starts at +width, comes in when dragging left
         case .search:
-            // When current is search, it sits at 0 and can be dragged right.
-            return dragOffset // dragOffset >= 0
+            return dragOffset // >= 0 when dragging right to go back
         }
     }
 }
@@ -241,129 +251,43 @@ private struct BottomBar: View {
     }
 }
 
-// MARK: - Home Screen
+// MARK: - Simple Home Screen
 
-private struct HomeView: View {
+private struct SimpleHomeView: View {
     @StateObject private var viewModel = ViewModel()
     @AppStorage("savedCity") private var savedCity: String = "jabalpur"
-    @State private var tempCity: String = "" // staging text for saving
     
-    // For suggestions on Home like Search
-    @FocusState private var changeFocused: Bool
-    @State private var suppressSearch: Bool = false
-    
-    // Track when a scroll gesture is dismissing the keyboard
-    @State private var isScrollDismissingKeyboard: Bool = false
-    
-    // Accept whether vertical scroll should be disabled while horizontally dragging
+    let onTapSettings: () -> Void
     let scrollDisabled: Bool
-    
-    // Layout constants (reuse from Search for consistent sizing)
-    private let fieldBottomPadding: CGFloat = 8
-    private let fieldEstimatedHeight: CGFloat = 44
-    private let fieldMaxWidth: CGFloat = 520
     
     var body: some View {
         GeometryReader { geo in
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
-                    Text("Home")
-                        .font(.largeTitle.weight(.black))
-                        .foregroundStyle(.white.gradient)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 16)
-                    
-                    // Saved city card
-                    VStack(spacing: 12) {
-                        Text("Default City")
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.9))
-                        
-                        Text(savedCity)
-                            .font(.title2.weight(.semibold))
-                            .foregroundColor(.white)
-                        
-                        // Editable field + save
-                        VStack(spacing: 0) {
-                            HStack {
-                                TextField("Change city", text: $tempCity)
-                                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                                    .padding(.horizontal)
-                                    .frame(maxWidth: fieldMaxWidth)
-                                    .focused($changeFocused)
-                                    .submitLabel(.done)
-                                    .onTapGesture { changeFocused = true }
-                                    .onSubmit {
-                                        changeFocused = false
-                                        viewModel.cancelSuggestions()
-                                        let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if !trimmed.isEmpty {
-                                            savedCity = trimmed
-                                            viewModel.fetch(city: savedCity)
-                                            tempCity = ""
-                                        }
-                                    }
-                                    .onChange(of: tempCity) { newValue in
-                                        let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                        if !suppressSearch {
-                                            viewModel.searchCities(query: q)
-                                        }
-                                    }
-                                
-                                Button("Save") {
-                                    changeFocused = false
-                                    viewModel.cancelSuggestions()
-                                    let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if !trimmed.isEmpty {
-                                        savedCity = trimmed
-                                        viewModel.fetch(city: savedCity)
-                                        tempCity = ""
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, fieldBottomPadding)
+                    // Top bar with gear button (icon)
+                    HStack {
+                        Spacer()
+                        Button(action: onTapSettings) {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(10)
+                                .background(Color.white.opacity(0.15), in: Circle())
+                                .accessibilityLabel("Open Settings")
                         }
-                        .padding(.horizontal)
-                        .overlay(alignment: .top) {
-                            if !viewModel.suggestions.isEmpty {
-                                SuggestionsList(
-                                    suggestions: viewModel.suggestions,
-                                    onSelect: { suggestion in
-                                        suppressSearch = true
-                                        changeFocused = false
-                                        viewModel.cancelSuggestions()
-                                        
-                                        let displayName = formattedName(for: suggestion)
-                                        // Persist the chosen city name and fetch by coordinates
-                                        savedCity = displayName
-                                        viewModel.selectSuggestion(suggestion)
-                                        tempCity = ""
-                                        
-                                        DispatchQueue.main.async {
-                                            suppressSearch = false
-                                        }
-                                    }
-                                )
-                                .frame(maxWidth: fieldMaxWidth)
-                                .padding(.top, fieldEstimatedHeight + fieldBottomPadding + 6)
-                                .padding(.horizontal)
-                                .zIndex(1)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                                .animation(.easeInOut(duration: 0.2), value: viewModel.suggestions)
-                            }
-                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.top, 12)
                     }
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: 520)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1)
-                    )
-                    .padding(.horizontal)
-                    // Make the Home field/card sit above following content, like Search does.
-                    .zIndex(1)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    
+                    // Centered city name
+                    Text(savedCity)
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 8)
+                        .frame(maxWidth: .infinity, alignment: .center)
                     
                     // Weather for saved city
                     if let weather = viewModel.apidata {
@@ -391,7 +315,7 @@ private struct HomeView: View {
                         Text("Condition: \(weather.weather[0].description)")
                             .foregroundColor(.white.opacity(0.9))
                     } else {
-                        Text("Set your default city above to see its weather here.")
+                        Text("Set your default city in Settings to see its weather here.")
                             .foregroundColor(.white.opacity(0.9))
                             .padding(.top, 8)
                     }
@@ -403,38 +327,13 @@ private struct HomeView: View {
             .scrollDisabled(scrollDisabled)
             .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(.keyboard, edges: .bottom)
-            // Detect a scroll drag while the field is focused to mark intent to dismiss by scroll
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { _ in
-                        if changeFocused {
-                            isScrollDismissingKeyboard = true
-                        }
-                    }
-                    .onEnded { _ in
-                        // Keep the flag; it will be cleared on keyboard hide notification
-                    }
-            )
-            // Clear the field only when keyboard hides due to a scroll dismissal
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
-                if isScrollDismissingKeyboard {
-                    tempCity = ""
-                    viewModel.cancelSuggestions()
-                    isScrollDismissingKeyboard = false
-                }
-            }
             .onAppear {
-                // Always load the saved city at app start
+                // Load the saved city at app start and when Home appears
                 viewModel.fetch(city: savedCity)
             }
-        }
-    }
-    
-    private func formattedName(for s: GeoLocation) -> String {
-        if let state = s.state, !state.isEmpty {
-            return "\(s.name), \(s.state), \(s.country)"
-        } else {
-            return "\(s.name), \(s.country)"
+            .onChange(of: savedCity) { newValue in
+                viewModel.fetch(city: newValue)
+            }
         }
     }
     
@@ -457,7 +356,7 @@ private struct HomeView: View {
     }
 }
 
-// MARK: - Search Screen
+// MARK: - Search Screen (unchanged)
 
 private struct SearchView: View {
     @StateObject private var viewModel = ViewModel()
@@ -615,6 +514,222 @@ private struct SearchView: View {
                     viewModel.fetch(city: "jabalpur")
                 }
             }
+        }
+    }
+    
+    private func formattedName(for s: GeoLocation) -> String {
+        if let state = s.state, !state.isEmpty {
+            return "\(s.name), \(s.state), \(s.country)"
+        } else {
+            return "\(s.name), \(s.country)"
+        }
+    }
+    
+    private func sfSymbolName(for icon: String) -> String {
+        switch icon {
+        case "01d": return "sun.max.fill"
+        case "01n": return "moon.stars.fill"
+        case "02d": return "cloud.sun.fill"
+        case "02n": return "cloud.moon.fill"
+        case "03d", "03n": return "cloud.fill"
+        case "04d", "04n": return "smoke.fill"
+        case "09d", "09n": return "cloud.drizzle.fill"
+        case "10d": return "cloud.sun.rain.fill"
+        case "10n": return "cloud.moon.rain.fill"
+        case "11d", "11n": return "cloud.bolt.rain.fill"
+        case "13d", "13n": return "cloud.snow.fill"
+        case "50d", "50n": return "cloud.fog.fill"
+        default: return "cloud.fill"
+        }
+    }
+}
+
+// MARK: - Settings Overlay (moved search/save from old Home)
+
+private struct SettingsView: View {
+    @StateObject private var viewModel = ViewModel()
+    @AppStorage("savedCity") private var savedCity: String = "jabalpur"
+    @State private var tempCity: String = "" // staging text for saving
+    
+    @FocusState private var changeFocused: Bool
+    @State private var suppressSearch: Bool = false
+    @State private var isScrollDismissingKeyboard: Bool = false
+    
+    let onDismiss: () -> Void
+    
+    // Layout constants
+    private let fieldBottomPadding: CGFloat = 8
+    private let fieldEstimatedHeight: CGFloat = 44
+    private let fieldMaxWidth: CGFloat = 520
+    
+    var body: some View {
+        GeometryReader { geo in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 16) {
+                    // Top bar with back arrow icon in the same place as the gear
+                    HStack {
+                        Spacer()
+                        Button(action: onDismiss) {
+                            Image(systemName: "chevron.backward")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(10)
+                                .background(Color.white.opacity(0.18), in: Circle())
+                                .accessibilityLabel("Go Back")
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.top, 12)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    
+                    Text("Settings")
+                        .font(.largeTitle.weight(.black))
+                        .foregroundStyle(.white.gradient)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 4)
+                    
+                    // Saved city card with search/save
+                    VStack(spacing: 12) {
+                        Text("Default City")
+                            .font(.headline)
+                            .foregroundColor(.white.opacity(0.9))
+                        
+                        Text(savedCity)
+                            .font(.title2.weight(.semibold))
+                            .foregroundColor(.white)
+                        
+                        VStack(spacing: 0) {
+                            HStack {
+                                TextField("Change city", text: $tempCity)
+                                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                                    .padding(.horizontal)
+                                    .frame(maxWidth: fieldMaxWidth)
+                                    .focused($changeFocused)
+                                    .submitLabel(.done)
+                                    .onTapGesture { changeFocused = true }
+                                    .onSubmit {
+                                        changeFocused = false
+                                        viewModel.cancelSuggestions()
+                                        let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if !trimmed.isEmpty {
+                                            savedCity = trimmed
+                                            viewModel.fetch(city: savedCity)
+                                            tempCity = ""
+                                        }
+                                    }
+                                    .onChange(of: tempCity) { newValue in
+                                        let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                        if !suppressSearch {
+                                            viewModel.searchCities(query: q)
+                                        }
+                                    }
+                                
+                                Button("Save") {
+                                    changeFocused = false
+                                    viewModel.cancelSuggestions()
+                                    let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !trimmed.isEmpty {
+                                        savedCity = trimmed
+                                        viewModel.fetch(city: savedCity)
+                                        tempCity = ""
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, fieldBottomPadding)
+                        }
+                        .padding(.horizontal)
+                        .overlay(alignment: .top) {
+                            if !viewModel.suggestions.isEmpty {
+                                SuggestionsList(
+                                    suggestions: viewModel.suggestions,
+                                    onSelect: { suggestion in
+                                        suppressSearch = true
+                                        changeFocused = false
+                                        viewModel.cancelSuggestions()
+                                        
+                                        let displayName = formattedName(for: suggestion)
+                                        // Persist the chosen city name and fetch by coordinates
+                                        savedCity = displayName
+                                        viewModel.selectSuggestion(suggestion)
+                                        tempCity = ""
+                                        
+                                        DispatchQueue.main.async {
+                                            suppressSearch = false
+                                        }
+                                    }
+                                )
+                                .frame(maxWidth: fieldMaxWidth)
+                                .padding(.top, fieldEstimatedHeight + fieldBottomPadding + 6)
+                                .padding(.horizontal)
+                                .zIndex(1)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .animation(.easeInOut(duration: 0.2), value: viewModel.suggestions)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: 520)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+                    .padding(.horizontal)
+                    .zIndex(1)
+                    
+                    // Optional: live weather preview for the saved city
+                    if let weather = viewModel.apidata {
+                        let iconCode = weather.weather.first?.icon ?? "01d"
+                        Image(systemName: sfSymbolName(for: iconCode))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.white)
+                            .font(.system(size: 140, weight: .regular))
+                            .padding(.bottom, 8)
+                        
+                        Text("\(weather.main.temp, specifier: "%.1f")°C")
+                            .font(.system(size: 48, weight: .bold))
+                            .foregroundColor(.white)
+                        
+                        Text(weather.name)
+                            .font(.title2)
+                            .foregroundColor(.white)
+                    }
+                    
+                    Spacer(minLength: 40)
+                }
+                .frame(minHeight: geo.size.height + 1, alignment: .top)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { _ in
+                        if changeFocused {
+                            isScrollDismissingKeyboard = true
+                        }
+                    }
+            )
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                if isScrollDismissingKeyboard {
+                    tempCity = ""
+                    viewModel.cancelSuggestions()
+                    isScrollDismissingKeyboard = false
+                }
+            }
+            .onAppear {
+                // Load the saved city weather to preview
+                viewModel.fetch(city: savedCity)
+            }
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [.blue, .purple]),
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            )
         }
     }
     
