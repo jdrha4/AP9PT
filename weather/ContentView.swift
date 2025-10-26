@@ -359,6 +359,8 @@ private struct HomeView: View {
                         RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.12), lineWidth: 1)
                     )
                     .padding(.horizontal)
+                    // Make the Home field/card sit above following content, like Search does.
+                    .zIndex(1)
                     
                     // Weather for saved city
                     if let weather = viewModel.apidata {
