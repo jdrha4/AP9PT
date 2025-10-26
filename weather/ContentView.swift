@@ -366,13 +366,17 @@ private struct SimpleHomeView: View {
                             .foregroundColor(.white)
                         
                         Text("Humidity: \(weather.main.humidity) %")
-                            .foregroundColor(.white.opacity(0.9))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
                         Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
-                            .foregroundColor(.white.opacity(0.9))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
                         Text("Wind: \(weather.wind.speed * 3.6, specifier: "%.2f") km/h")
-                            .foregroundColor(.white.opacity(0.9))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
                         Text("Condition: \(weather.weather[0].description)")
-                            .foregroundColor(.white.opacity(0.9))
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
                     } else {
                         // Fallback when weather not yet loaded
                         Text(savedCity)
@@ -404,6 +408,10 @@ private struct SimpleHomeView: View {
             // Update greeting every minute so it changes when time passes
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { date in
                 now = date
+            }
+            // Refresh weather every 60 seconds
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                viewModel.fetch(city: savedCity)
             }
         }
     }
@@ -494,9 +502,9 @@ private struct SearchView: View {
                                     searchFocused = false
                                     viewModel.cancelSuggestions()
                                     
-                                    let displayName = formattedName(for: suggestion)
-                                    city = displayName
+                                    // Clear the search field after selection (match SettingsView behavior)
                                     viewModel.selectSuggestion(suggestion)
+                                    city = ""
                                     
                                     DispatchQueue.main.async {
                                         suppressSearch = false
@@ -539,16 +547,20 @@ private struct SearchView: View {
                                 .foregroundColor(.white)
                             
                             Text("Humidity: \(weather.main.humidity) %")
-                                .foregroundColor(.white.opacity(0.9))
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
                             
                             Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
-                                .foregroundColor(.white.opacity(0.9))
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
                             
                             Text("Wind: \(weather.wind.speed * 3.6, specifier: "%.2f") km/h")
-                                .foregroundColor(.white.opacity(0.9))
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
                             
                             Text("Condition: \(weather.weather[0].description)")
-                                .foregroundColor(.white.opacity(0.9))
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
@@ -592,6 +604,11 @@ private struct SearchView: View {
                 if viewModel.apidata == nil {
                     viewModel.fetch(city: "Prague")
                 }
+            }
+            // Refresh weather every 60 seconds
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                let targetCity = viewModel.apidata?.name ?? (city.isEmpty ? "Prague" : city)
+                viewModel.fetch(city: targetCity)
             }
         }
     }
@@ -751,23 +768,28 @@ private struct SettingsView: View {
                     .padding(.horizontal)
                     .zIndex(1)
                     
-                    // Optional: live weather preview for the saved city
+                    // Live weather preview for the saved city
                     if let weather = viewModel.apidata {
+                        // Match layout: city name above icon
+                        Text(weather.name)
+                            .font(.system(size: 45, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 10)
+                            .padding(.bottom, 8)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        
                         let iconCode = weather.weather.first?.icon ?? "01d"
                         Image(systemName: sfSymbolName(for: iconCode))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.white)
                             .font(.system(size: 140, weight: .regular))
-                            .frame(height: iconFixedHeight) // normalize vertical space
+                            .frame(height: iconFixedHeight)
                             .padding(.top, 8)
                             .padding(.bottom, 16)
                         
                         Text("\(weather.main.temp, specifier: "%.1f")°C")
-                            .font(.system(size: 48, weight: .bold))
-                            .foregroundColor(.white)
-                        
-                        Text(weather.name)
-                            .font(.title2)
+                            .font(.system(size: 40, weight: .bold))
                             .foregroundColor(.white)
                     }
                     
@@ -795,6 +817,11 @@ private struct SettingsView: View {
             .onAppear {
                 // Load the saved city weather to preview
                 viewModel.fetch(city: savedCity)
+            }
+            // Refresh weather every 60 seconds
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                let targetCity = viewModel.apidata?.name ?? savedCity
+                viewModel.fetch(city: targetCity)
             }
             // No per-view gradient here; inherits the shared background for seamless transitions.
         }
