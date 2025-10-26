@@ -52,27 +52,59 @@ struct ContentView: View {
                 }
                 .onEnded { value in
                     // If we never locked horizontally (e.g., keyboard visible or purely vertical), nothing to do.
-                    defer {
-                        isHorizontalDrag = false
+                    if !isHorizontalDrag {
                         dragOffset = 0
+                        return
                     }
                     
+                    let oldDrag = dragOffset
                     let dx = value.translation.width
-                    let shouldGoToSearch = (currentTab == .home && dx < 0 && abs(dx) > width * swipeThresholdRatio)
-                    let shouldGoToHome   = (currentTab == .search && dx > 0 && abs(dx) > width * swipeThresholdRatio)
+                    let passedThreshold = abs(dx) > width * swipeThresholdRatio || abs(oldDrag) > width * swipeThresholdRatio
                     
-                    if shouldGoToSearch {
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            currentTab = .search
+                    // Reset lock now; we'll animate dragOffset as needed below.
+                    isHorizontalDrag = false
+                    
+                    switch currentTab {
+                    case .home:
+                        if passedThreshold && dx < 0 {
+                            // Commit to Search while preserving visual continuity.
+                            // Under .home, searchOffset = width + oldDrag.
+                            let currentSearchOffset = width + oldDrag
+                            
+                            withAnimation(nil) {
+                                currentTab = .search
+                                // Under .search, searchOffset = dragOffset; keep the same on-screen position.
+                                dragOffset = currentSearchOffset
+                            }
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                dragOffset = 0
+                            }
+                        } else {
+                            // Cancel
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                dragOffset = 0
+                            }
                         }
-                    } else if shouldGoToHome {
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            currentTab = .home
-                        }
-                    } else {
-                        // Not far enough: cancel and spring back
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
-                            // dragOffset reset happens in defer
+                        
+                    case .search:
+                        if passedThreshold && dx > 0 {
+                            // Commit to Home while preserving visual continuity.
+                            // Under .search, homeOffset = -width + oldDrag.
+                            let currentHomeOffset = -width + oldDrag
+                            
+                            withAnimation(nil) {
+                                currentTab = .home
+                                // Under .home, homeOffset = dragOffset; keep the same on-screen position.
+                                dragOffset = currentHomeOffset
+                            }
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                dragOffset = 0
+                            }
+                        } else {
+                            // Cancel
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                dragOffset = 0
+                            }
                         }
                     }
                 }
@@ -89,8 +121,7 @@ struct ContentView: View {
                     .allowsHitTesting(currentTab == .search && dragOffset == 0)
                     .accessibilityHidden(currentTab != .search && dragOffset == 0)
             }
-            // Only animate the committed tab change, not the live drag
-            .animation(.easeInOut(duration: 0.28), value: currentTab)
+            // We control animations manually; do not implicitly animate on currentTab changes.
             .contentShape(Rectangle()) // allow hits across the whole area
             // Attach the horizontal gesture simultaneously and only to this container's gesture arena.
             // This ensures subviews (TextField, Buttons) receive taps immediately.
@@ -109,8 +140,10 @@ struct ContentView: View {
                     currentTab: $currentTab,
                     onSelect: { target in
                         guard target != currentTab else { return }
+                        // Button taps should still animate a full switch.
                         withAnimation(.easeInOut(duration: 0.28)) {
                             currentTab = target
+                            dragOffset = 0
                         }
                     }
                 )
