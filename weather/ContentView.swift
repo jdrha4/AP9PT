@@ -308,6 +308,9 @@ private struct SimpleHomeView: View {
         }
     }
     
+    // Fixed height to normalize icon space
+    private let iconFixedHeight: CGFloat = 160
+    
     var body: some View {
         GeometryReader { geo in
             ScrollView(.vertical, showsIndicators: false) {
@@ -353,7 +356,9 @@ private struct SimpleHomeView: View {
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.white)
                             .font(.system(size: 140, weight: .regular))
-                            .padding(.bottom, 8)
+                            .frame(height: iconFixedHeight) // normalize vertical space
+                            .padding(.top, 8)              // add space from city name
+                            .padding(.bottom, 16)          // add space before data
                         
                         Text("\(weather.main.temp, specifier: "%.1f")°C")
                             .font(.system(size: 40, weight: .bold))
@@ -436,7 +441,11 @@ private struct SearchView: View {
     private let fieldBottomPadding: CGFloat = 8
     private let fieldEstimatedHeight: CGFloat = 56 // increased height
     private let fieldMaxWidth: CGFloat = 300
-    private let searchSectionBottomSpacing: CGFloat = 24 // extra space below the search bar
+    // Reduce this so the weather block sits higher (closer to Home)
+    private let searchSectionBottomSpacing: CGFloat = 8
+    
+    // Normalize icon vertical space
+    private let iconFixedHeight: CGFloat = 160
     
     // Accept whether vertical scroll should be disabled while horizontally dragging
     let scrollDisabled: Bool
@@ -446,13 +455,6 @@ private struct SearchView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 ZStack {
                     VStack {
-//                        Text("Search")
-//                            .font(.largeTitle.weight(.semibold))
-//                            .foregroundStyle(.white.gradient)
-//                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
-//                            .padding(.top, geo.safeAreaInsets.top + 15)
-//                            .padding(.bottom, 20)
-                        
                         VStack(spacing: 0) {
                             HStack {
                                 SearchBarField(
@@ -476,8 +478,8 @@ private struct SearchView: View {
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.top, geo.safeAreaInsets.top + 15)
-                            .padding(.bottom, 20)
-//                            .padding(.vertical, fieldBottomPadding)
+                            // Slightly smaller bottom padding so section below is higher
+                            .padding(.bottom, 25)
                         }
                         .padding(.horizontal)
                         .overlay(alignment: .top) {
@@ -506,7 +508,7 @@ private struct SearchView: View {
                                 .animation(.easeInOut(duration: 0.2), value: viewModel.suggestions)
                             }
                         }
-                        .padding(.bottom, searchSectionBottomSpacing) // push content below the search bar
+                        .padding(.bottom, searchSectionBottomSpacing) // reduced spacing to lift content
                         .zIndex(1)
                         
                         if let weather = viewModel.apidata {
@@ -518,6 +520,7 @@ private struct SearchView: View {
                                     .foregroundColor(.white)
                                     .multilineTextAlignment(.center)
                                     .padding(.top, 4)
+                                    .padding(.bottom, 8) // added bottom padding before the icon
                                     .frame(maxWidth: .infinity, alignment: .center)
                                 
                                 let iconCode = weather.weather.first?.icon ?? "01d"
@@ -525,7 +528,9 @@ private struct SearchView: View {
                                     .symbolRenderingMode(.hierarchical)
                                     .foregroundStyle(.white)
                                     .font(.system(size: 140, weight: .regular))
-                                    .padding(.bottom, 8)
+                                    .frame(height: iconFixedHeight) // normalize vertical space
+                                    .padding(.top, 8)               // add space from city name (kept for consistency)
+                                    .padding(.bottom, 16)           // add space before data
                                 
                                 Text("\(weather.main.temp, specifier: "%.1f")°C")
                                     .font(.system(size: 40, weight: .bold))
@@ -631,6 +636,9 @@ private struct SettingsView: View {
     private let fieldBottomPadding: CGFloat = 8
     private let fieldEstimatedHeight: CGFloat = 56 // increased height
     private let fieldMaxWidth: CGFloat = 420 // narrower
+    
+    // Normalize icon vertical space
+    private let iconFixedHeight: CGFloat = 160
     
     var body: some View {
         GeometryReader { geo in
@@ -745,7 +753,9 @@ private struct SettingsView: View {
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.white)
                             .font(.system(size: 140, weight: .regular))
-                            .padding(.bottom, 8)
+                            .frame(height: iconFixedHeight) // normalize vertical space
+                            .padding(.top, 8)
+                            .padding(.bottom, 16)
                         
                         Text("\(weather.main.temp, specifier: "%.1f")°C")
                             .font(.system(size: 48, weight: .bold))
