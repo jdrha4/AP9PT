@@ -20,6 +20,22 @@ struct ContentView: View {
         GeometryReader { geo in
             let width = max(geo.size.width, 1) // avoid division by zero
             
+            // Compute gradient interpolation progress based on drag direction and tab
+            let progress: CGFloat = {
+                switch currentTab {
+                case .home:
+                    // dragging left => negative dragOffset (0...1)
+                    return min(1, max(0, -dragOffset / width))
+                case .search:
+                    // dragging right => positive dragOffset (0...1)
+                    return min(1, max(0, dragOffset / width))
+                }
+            }()
+            // Phase 0 = Home orientation, 1 = Search orientation
+            let phase: CGFloat = (currentTab == .home) ? progress : (1 - progress)
+            let start = unitLerp(.topLeading, .topTrailing, t: phase)
+            let end   = unitLerp(.bottomTrailing, .bottomLeading, t: phase)
+            
             // The horizontal drag gesture used for tab preview/switching
             let horizontalDrag = DragGesture(minimumDistance: 10, coordinateSpace: .local)
                 .onChanged { value in
@@ -107,26 +123,29 @@ struct ContentView: View {
                 }
             
             ZStack {
-                // Base tabs stack (Home and Search)
-                ZStack {
-                    // Home (simple)
-                    SimpleHomeView(onTapSettings: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            isShowingSettings = true
-                            dragOffset = 0
-                        }
-                    }, scrollDisabled: !isKeyboardVisible)
-                    .offset(x: homeOffset(width: width))
-                    .allowsHitTesting(!isShowingSettings && currentTab == .home && dragOffset == 0)
-                    .accessibilityHidden(currentTab != .home && dragOffset == 0)
-                    
-                    // Search (unchanged except city name placement above icon)
-                    SearchView(scrollDisabled: !isKeyboardVisible)
-                        .offset(x: searchOffset(width: width))
-                        .allowsHitTesting(!isShowingSettings && currentTab == .search && dragOffset == 0)
-                        .accessibilityHidden(currentTab != .search && dragOffset == 0)
+                // Render base tabs only when settings is not showing
+                if !isShowingSettings {
+                    ZStack {
+                        // Home (simple)
+                        SimpleHomeView(onTapSettings: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                isShowingSettings = true
+                                dragOffset = 0
+                            }
+                        }, scrollDisabled: !isKeyboardVisible)
+                        .offset(x: homeOffset(width: width))
+                        .allowsHitTesting(currentTab == .home && dragOffset == 0)
+                        .accessibilityHidden(currentTab != .home && dragOffset == 0)
+                        
+                        // Search
+                        SearchView(scrollDisabled: !isKeyboardVisible)
+                            .offset(x: searchOffset(width: width))
+                            .allowsHitTesting(currentTab == .search && dragOffset == 0)
+                            .accessibilityHidden(currentTab != .search && dragOffset == 0)
+                    }
                 }
-                // Settings overlay fades above the Home tab
+                
+                // Settings overlay fades above; base tabs are not rendered while it's visible
                 if isShowingSettings {
                     SettingsView(onDismiss: {
                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -144,11 +163,13 @@ struct ContentView: View {
             .modifier(HGestureChooser(isKeyboardVisible: isKeyboardVisible, gesture: horizontalDrag))
             .ignoresSafeArea(.keyboard, edges: .bottom)
             .background(
+                // Single gradient with interpolated orientation (no additive brightness)
                 LinearGradient(
                     gradient: Gradient(colors: [.blue, .purple]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+                    startPoint: start,
+                    endPoint: end
                 )
+                .animation(.easeInOut(duration: 0.28), value: currentTab) // animate on button tab changes
                 .ignoresSafeArea()
             )
             .safeAreaInset(edge: .bottom) {
@@ -179,6 +200,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
         }
+    }
+    
+    // MARK: - Helpers
+    
+    // Linear interpolation between two UnitPoints (0...1 space)
+    private func unitLerp(_ a: UnitPoint, _ b: UnitPoint, t: CGFloat) -> UnitPoint {
+        let clamped = min(1, max(0, t))
+        return UnitPoint(
+            x: a.x + (b.x - a.x) * clamped,
+            y: a.y + (b.y - a.y) * clamped
+        )
     }
     
     // MARK: - Offsets (Home <-> Search only)
@@ -525,14 +557,7 @@ private struct SearchView: View {
             .scrollDisabled(scrollDisabled)
             .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(.keyboard, edges: .bottom)
-            .background(
-                LinearGradient(
-                    gradient: Gradient(colors: [.blue, .purple]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-            )
+            // No per-tab gradient here; it inherits the shared background for seamless transitions.
             // Detect a scroll drag while the field is focused to mark intent to dismiss by scroll
             .simultaneousGesture(
                 DragGesture(minimumDistance: 1)
@@ -755,14 +780,7 @@ private struct SettingsView: View {
                 // Load the saved city weather to preview
                 viewModel.fetch(city: savedCity)
             }
-            .background(
-                LinearGradient(
-                    gradient: Gradient(colors: [.blue, .purple]),
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-            )
+            // No per-view gradient here; inherits the shared background for seamless transitions.
         }
     }
     
