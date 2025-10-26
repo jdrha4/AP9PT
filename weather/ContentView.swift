@@ -120,7 +120,7 @@ struct ContentView: View {
                     .allowsHitTesting(!isShowingSettings && currentTab == .home && dragOffset == 0)
                     .accessibilityHidden(currentTab != .home && dragOffset == 0)
                     
-                    // Search (unchanged)
+                    // Search (unchanged except city name placement above icon)
                     SearchView(scrollDisabled: !isKeyboardVisible)
                         .offset(x: searchOffset(width: width))
                         .allowsHitTesting(!isShowingSettings && currentTab == .search && dragOffset == 0)
@@ -281,16 +281,16 @@ private struct SimpleHomeView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     
-                    // Centered city name
-                    Text(savedCity)
-                        .font(.system(size: 34, weight: .bold))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, 8)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    
-                    // Weather for saved city
+                    // City name ABOVE the weather icon (use API city name if available; fallback to savedCity)
                     if let weather = viewModel.apidata {
+                        Text(weather.name)
+                            .font(.system(size: 34, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 8)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        
+                        // Weather icon and details
                         let iconCode = weather.weather.first?.icon ?? "01d"
                         Image(systemName: sfSymbolName(for: iconCode))
                             .symbolRenderingMode(.hierarchical)
@@ -302,10 +302,6 @@ private struct SimpleHomeView: View {
                             .font(.system(size: 48, weight: .bold))
                             .foregroundColor(.white)
                         
-                        Text(weather.name)
-                            .font(.title2)
-                            .foregroundColor(.white)
-                        
                         Text("Humidity: \(weather.main.humidity) %")
                             .foregroundColor(.white.opacity(0.9))
                         Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
@@ -315,6 +311,14 @@ private struct SimpleHomeView: View {
                         Text("Condition: \(weather.weather[0].description)")
                             .foregroundColor(.white.opacity(0.9))
                     } else {
+                        // Fallback when weather not yet loaded
+                        Text(savedCity)
+                            .font(.system(size: 34, weight: .bold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 8)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        
                         Text("Set your default city in Settings to see its weather here.")
                             .foregroundColor(.white.opacity(0.9))
                             .padding(.top, 8)
@@ -356,7 +360,7 @@ private struct SimpleHomeView: View {
     }
 }
 
-// MARK: - Search Screen (unchanged)
+// MARK: - Search Screen (city name moved above icon)
 
 private struct SearchView: View {
     @StateObject private var viewModel = ViewModel()
@@ -441,6 +445,14 @@ private struct SearchView: View {
                         .zIndex(1)
                         
                         if let weather = viewModel.apidata {
+                            // City name ABOVE the icon
+                            Text(weather.name)
+                                .font(.system(size: 34, weight: .bold))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 8)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            
                             let iconCode = weather.weather.first?.icon ?? "01d"
                             Image(systemName: sfSymbolName(for: iconCode))
                                 .symbolRenderingMode(.hierarchical)
@@ -452,9 +464,7 @@ private struct SearchView: View {
                                 .font(.system(size: 50))
                                 .foregroundColor(.white)
                             
-                            Text(weather.name)
-                                .font(.title)
-                                .foregroundColor(.white)
+                            // Removed the duplicate city name that used to be below the icon.
                             
                             Text("Humidity: \(weather.main.humidity) %")
                                 .foregroundColor(.white)
