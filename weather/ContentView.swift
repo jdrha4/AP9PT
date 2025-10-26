@@ -348,6 +348,7 @@ private struct SimpleHomeView: View {
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
                             .padding(.top, 4)
+                            .padding(.bottom, 10)
                             .frame(maxWidth: .infinity, alignment: .center)
                         
                         // Weather icon and details
@@ -447,124 +448,128 @@ private struct SearchView: View {
     // Normalize icon vertical space
     private let iconFixedHeight: CGFloat = 160
     
+    // Set initial vertical position for the weather block within ScrollView
+    private let pinnedTopOffset: CGFloat = 33
+    
     // Accept whether vertical scroll should be disabled while horizontally dragging
     let scrollDisabled: Bool
     
     var body: some View {
         GeometryReader { geo in
             ScrollView(.vertical, showsIndicators: false) {
-                ZStack {
-                    VStack {
-                        VStack(spacing: 0) {
-                            HStack {
-                                SearchBarField(
-                                    text: $city,
-                                    placeholder: "Search",
-                                    isFocused: $searchFocused,
-                                    submitLabel: .search
-                                )
-                                .frame(maxWidth: fieldMaxWidth)
-                                .onSubmit {
+                VStack(spacing: 0) {
+                    // Search section
+                    VStack(spacing: 0) {
+                        HStack {
+                            SearchBarField(
+                                text: $city,
+                                placeholder: "Search",
+                                isFocused: $searchFocused,
+                                submitLabel: .search
+                            )
+                            .frame(maxWidth: fieldMaxWidth)
+                            .onSubmit {
+                                searchFocused = false
+                                viewModel.cancelSuggestions()
+                                viewModel.fetch(city: city.isEmpty ? "Prague" : city)
+                            }
+                            .onChange(of: city) { newValue in
+                                let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                                if !suppressSearch {
+                                    viewModel.searchCities(query: q)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, geo.safeAreaInsets.top + 15)
+//                        .padding(.bottom, 25)
+                    }
+                    .padding(.horizontal)
+                    .overlay(alignment: .top) {
+                        if !viewModel.suggestions.isEmpty {
+                            SuggestionsList(
+                                suggestions: viewModel.suggestions,
+                                onSelect: { suggestion in
+                                    suppressSearch = true
                                     searchFocused = false
                                     viewModel.cancelSuggestions()
-                                    viewModel.fetch(city: city.isEmpty ? "Prague" : city)
-                                }
-                                .onChange(of: city) { newValue in
-                                    let q = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if !suppressSearch {
-                                        viewModel.searchCities(query: q)
+                                    
+                                    let displayName = formattedName(for: suggestion)
+                                    city = displayName
+                                    viewModel.selectSuggestion(suggestion)
+                                    
+                                    DispatchQueue.main.async {
+                                        suppressSearch = false
                                     }
                                 }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, geo.safeAreaInsets.top + 15)
-                            // Slightly smaller bottom padding so section below is higher
-                            .padding(.bottom, 25)
-                        }
-                        .padding(.horizontal)
-                        .overlay(alignment: .top) {
-                            if !viewModel.suggestions.isEmpty {
-                                SuggestionsList(
-                                    suggestions: viewModel.suggestions,
-                                    onSelect: { suggestion in
-                                        suppressSearch = true
-                                        searchFocused = false
-                                        viewModel.cancelSuggestions()
-                                        
-                                        let displayName = formattedName(for: suggestion)
-                                        city = displayName
-                                        viewModel.selectSuggestion(suggestion)
-                                        
-                                        DispatchQueue.main.async {
-                                            suppressSearch = false
-                                        }
-                                    }
-                                )
-                                .frame(maxWidth: fieldMaxWidth)
-                                .padding(.top, fieldEstimatedHeight + fieldBottomPadding + 6)
-                                .padding(.horizontal)
-                                .zIndex(1)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                                .animation(.easeInOut(duration: 0.2), value: viewModel.suggestions)
-                            }
-                        }
-                        .padding(.bottom, searchSectionBottomSpacing) // reduced spacing to lift content
-                        .zIndex(1)
-                        
-                        if let weather = viewModel.apidata {
-                            // Match Home tab fonts, spacing, and styling
-                            VStack(spacing: 16) {
-                                // City name ABOVE the icon
-                                Text(weather.name)
-                                    .font(.system(size: 45, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.top, 4)
-                                    .padding(.bottom, 8) // added bottom padding before the icon
-                                    .frame(maxWidth: .infinity, alignment: .center)
-                                
-                                let iconCode = weather.weather.first?.icon ?? "01d"
-                                Image(systemName: sfSymbolName(for: iconCode))
-                                    .symbolRenderingMode(.hierarchical)
-                                    .foregroundStyle(.white)
-                                    .font(.system(size: 140, weight: .regular))
-                                    .frame(height: iconFixedHeight) // normalize vertical space
-                                    .padding(.top, 8)               // add space from city name (kept for consistency)
-                                    .padding(.bottom, 16)           // add space before data
-                                
-                                Text("\(weather.main.temp, specifier: "%.1f")°C")
-                                    .font(.system(size: 40, weight: .bold))
-                                    .foregroundColor(.white)
-                                
-                                Text("Humidity: \(weather.main.humidity) %")
-                                    .foregroundColor(.white.opacity(0.9))
-                                
-                                Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
-                                    .foregroundColor(.white.opacity(0.9))
-                                
-                                Text("Wind: \(weather.wind.speed * 3.6, specifier: "%.2f") km/h")
-                                    .foregroundColor(.white.opacity(0.9))
-                                
-                                Text("Condition: \(weather.weather[0].description)")
-                                    .foregroundColor(.white.opacity(0.9))
-                            }
-                            .frame(maxWidth: .infinity)
-                        } else {
-                            Text("Welcome to Weather App")
-                                .font(.title)
-                                .foregroundColor(.white)
-                                .padding(.bottom, 20)
+                            )
+                            .frame(maxWidth: fieldMaxWidth)
+                            .padding(.top, fieldEstimatedHeight + fieldBottomPadding + 6)
+                            .padding(.horizontal)
+                            .zIndex(2)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .animation(.easeInOut(duration: 0.2), value: viewModel.suggestions)
                         }
                     }
-                    .padding(.bottom, 100)
+                    .padding(.bottom, searchSectionBottomSpacing)
+                    .zIndex(1)
+                    
+                    // Weather details INSIDE the ScrollView (moves with scroll)
+                    if let weather = viewModel.apidata {
+                        VStack(spacing: 16) {
+                            Text(weather.name)
+                                .font(.system(size: 45, weight: .bold))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 4)
+                                .padding(.bottom, 8)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                            
+                            let iconCode = weather.weather.first?.icon ?? "01d"
+                            Image(systemName: sfSymbolName(for: iconCode))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.white)
+                                .font(.system(size: 140, weight: .regular))
+                                .frame(height: iconFixedHeight) // normalize vertical space
+                                .padding(.top, 8)
+                                .padding(.bottom, 16)
+                            
+                            Text("\(weather.main.temp, specifier: "%.1f")°C")
+                                .font(.system(size: 40, weight: .bold))
+                                .foregroundColor(.white)
+                            
+                            Text("Humidity: \(weather.main.humidity) %")
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Text("Wind: \(weather.wind.speed * 3.6, specifier: "%.2f") km/h")
+                                .foregroundColor(.white.opacity(0.9))
+                            
+                            Text("Condition: \(weather.weather[0].description)")
+                                .foregroundColor(.white.opacity(0.9))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal)
+                        .padding(.top, pinnedTopOffset) // initial position; now scrolls with content
+                        .zIndex(0)
+                    } else {
+                        Text("Welcome to Weather App")
+                            .font(.title)
+                            .foregroundColor(.white)
+                            .padding(.top, pinnedTopOffset)
+                            .padding(.bottom, 20)
+                    }
+                    
+                    Spacer(minLength: 100)
                 }
                 .frame(minHeight: geo.size.height + 1, alignment: .top)
+                .contentShape(Rectangle()) // capture drags from empty areas too
             }
             .scrollDisabled(scrollDisabled)
             .scrollDismissesKeyboard(.interactively)
             .ignoresSafeArea(.keyboard, edges: .bottom)
-            // No per-tab gradient here; it inherits the shared background for seamless transitions.
-            // Detect a scroll drag while the field is focused to mark intent to dismiss by scroll
             .simultaneousGesture(
                 DragGesture(minimumDistance: 1)
                     .onChanged { _ in
@@ -573,10 +578,9 @@ private struct SearchView: View {
                         }
                     }
                     .onEnded { _ in
-                        // Keep the flag; it will be cleared on keyboard hide notification
+                        // keep flag; cleared on keyboard hide
                     }
             )
-            // Clear the field only when keyboard hides due to a scroll dismissal
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
                 if isScrollDismissingKeyboard {
                     city = ""
@@ -670,9 +674,9 @@ private struct SettingsView: View {
                     
                     // Saved city card with search/save
                     VStack(spacing: 12) {
-                        Text("Default City")
-                            .font(.headline)
-                            .foregroundColor(.white.opacity(0.9))
+//                        Text("Default City")
+//                            .font(.headline)
+//                            .foregroundColor(.white.opacity(0.9))
                         
                         Text(savedCity)
                             .font(.title2.weight(.semibold))
@@ -682,7 +686,7 @@ private struct SettingsView: View {
                             HStack {
                                 SearchBarField(
                                     text: $tempCity,
-                                    placeholder: "Change city",
+                                    placeholder: "Change default city",
                                     isFocused: $changeFocused,
                                     submitLabel: .done
                                 )
@@ -705,7 +709,8 @@ private struct SettingsView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, fieldBottomPadding)
+//                            .padding(.vertical, fieldBottomPadding)
+                            .padding(.bottom, 20)
                         }
                         .padding(.horizontal)
                         .overlay(alignment: .top) {
