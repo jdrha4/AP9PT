@@ -260,6 +260,22 @@ private struct SimpleHomeView: View {
     let onTapSettings: () -> Void
     let scrollDisabled: Bool
     
+    // Time-based greeting support
+    @State private var now: Date = Date()
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: now)
+        switch hour {
+        case 6...11:
+            return "Good morning."
+        case 12...17:
+            return "Good afternoon."
+        case 18...21:
+            return "Good evening."
+        default:
+            return "Good night."
+        }
+    }
+    
     var body: some View {
         GeometryReader { geo in
             ScrollView(.vertical, showsIndicators: false) {
@@ -281,13 +297,22 @@ private struct SimpleHomeView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     
+                    // Centered greeting above everything
+                    Text(greeting)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 20)
+                        .padding(.bottom, 30)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    
                     // City name ABOVE the weather icon (use API city name if available; fallback to savedCity)
                     if let weather = viewModel.apidata {
                         Text(weather.name)
-                            .font(.system(size: 34, weight: .bold))
+                            .font(.system(size: 45, weight: .bold))
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
-                            .padding(.top, 8)
+                            .padding(.top, 4)
                             .frame(maxWidth: .infinity, alignment: .center)
                         
                         // Weather icon and details
@@ -299,7 +324,7 @@ private struct SimpleHomeView: View {
                             .padding(.bottom, 8)
                         
                         Text("\(weather.main.temp, specifier: "%.1f")°C")
-                            .font(.system(size: 48, weight: .bold))
+                            .font(.system(size: 40, weight: .bold))
                             .foregroundColor(.white)
                         
                         Text("Humidity: \(weather.main.humidity) %")
@@ -316,7 +341,7 @@ private struct SimpleHomeView: View {
                             .font(.system(size: 34, weight: .bold))
                             .foregroundColor(.white)
                             .multilineTextAlignment(.center)
-                            .padding(.top, 8)
+                            .padding(.top, 4)
                             .frame(maxWidth: .infinity, alignment: .center)
                         
                         Text("Set your default city in Settings to see its weather here.")
@@ -337,6 +362,10 @@ private struct SimpleHomeView: View {
             }
             .onChange(of: savedCity) { newValue in
                 viewModel.fetch(city: newValue)
+            }
+            // Update greeting every minute so it changes when time passes
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { date in
+                now = date
             }
         }
     }
@@ -375,6 +404,7 @@ private struct SearchView: View {
     private let fieldBottomPadding: CGFloat = 8
     private let fieldEstimatedHeight: CGFloat = 44
     private let fieldMaxWidth: CGFloat = 520
+    private let searchSectionBottomSpacing: CGFloat = 24 // extra space below the search bar
     
     // Accept whether vertical scroll should be disabled while horizontally dragging
     let scrollDisabled: Bool
@@ -385,10 +415,11 @@ private struct SearchView: View {
                 ZStack {
                     VStack {
                         Text("Search")
-                            .font(.largeTitle.weight(.black))
+                            .font(.largeTitle.weight(.semibold))
                             .foregroundStyle(.white.gradient)
                             .frame(minWidth: 0, maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical)
+                            .padding(.top, geo.safeAreaInsets.top + 15)
+                            .padding(.bottom, 20)
                         
                         VStack(spacing: 0) {
                             HStack {
@@ -442,41 +473,44 @@ private struct SearchView: View {
                                 .animation(.easeInOut(duration: 0.2), value: viewModel.suggestions)
                             }
                         }
+                        .padding(.bottom, searchSectionBottomSpacing) // push content below the search bar
                         .zIndex(1)
                         
                         if let weather = viewModel.apidata {
-                            // City name ABOVE the icon
-                            Text(weather.name)
-                                .font(.system(size: 34, weight: .bold))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .padding(.top, 8)
-                                .frame(maxWidth: .infinity, alignment: .center)
-                            
-                            let iconCode = weather.weather.first?.icon ?? "01d"
-                            Image(systemName: sfSymbolName(for: iconCode))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(.white)
-                                .font(.system(size: 160, weight: .regular))
-                                .padding(.bottom, 8)
-                            
-                            Text("\(weather.main.temp, specifier: "%.1f")°C")
-                                .font(.system(size: 50))
-                                .foregroundColor(.white)
-                            
-                            // Removed the duplicate city name that used to be below the icon.
-                            
-                            Text("Humidity: \(weather.main.humidity) %")
-                                .foregroundColor(.white)
-                            
-                            Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
-                                .foregroundColor(.white)
-                            
-                            Text("Wind speed: \(weather.wind.speed * 3.6, specifier: "%.2f") km/h")
-                                .foregroundColor(.white)
-                            
-                            Text("Condition: \(weather.weather[0].description)")
-                                .foregroundColor(.white)
+                            // Match Home tab fonts, spacing, and styling
+                            VStack(spacing: 16) {
+                                // City name ABOVE the icon
+                                Text(weather.name)
+                                    .font(.system(size: 45, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.top, 4)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                
+                                let iconCode = weather.weather.first?.icon ?? "01d"
+                                Image(systemName: sfSymbolName(for: iconCode))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(.white)
+                                    .font(.system(size: 140, weight: .regular))
+                                    .padding(.bottom, 8)
+                                
+                                Text("\(weather.main.temp, specifier: "%.1f")°C")
+                                    .font(.system(size: 40, weight: .bold))
+                                    .foregroundColor(.white)
+                                
+                                Text("Humidity: \(weather.main.humidity) %")
+                                    .foregroundColor(.white.opacity(0.9))
+                                
+                                Text("Feels like: \(weather.main.feels_like, specifier: "%.1f")°C")
+                                    .foregroundColor(.white.opacity(0.9))
+                                
+                                Text("Wind: \(weather.wind.speed * 3.6, specifier: "%.2f") km/h")
+                                    .foregroundColor(.white.opacity(0.9))
+                                
+                                Text("Condition: \(weather.weather[0].description)")
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            .frame(maxWidth: .infinity)
                         } else {
                             Text("Welcome to Weather App")
                                 .font(.title)
@@ -598,8 +632,9 @@ private struct SettingsView: View {
                         .foregroundStyle(.white.gradient)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 4)
+                        .padding(.bottom, 20)
                     
-                    // Saved city card with search/save
+                    // Saved city card with search/save (Save button removed)
                     VStack(spacing: 12) {
                         Text("Default City")
                             .font(.headline)
@@ -634,18 +669,6 @@ private struct SettingsView: View {
                                             viewModel.searchCities(query: q)
                                         }
                                     }
-                                
-                                Button("Save") {
-                                    changeFocused = false
-                                    viewModel.cancelSuggestions()
-                                    let trimmed = tempCity.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    if !trimmed.isEmpty {
-                                        savedCity = trimmed
-                                        viewModel.fetch(city: savedCity)
-                                        tempCity = ""
-                                    }
-                                }
-                                .buttonStyle(.borderedProminent)
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, fieldBottomPadding)
