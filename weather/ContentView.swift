@@ -300,6 +300,7 @@ private struct BubbleBar: View {
     @State private var dragTranslation: CGFloat = 0
     @State private var dragStartIndex: Int = 0
     @State private var didFireMidHaptic: Bool = false
+    @State private var dragStartX: CGFloat = 0 // freeze base position at drag start
     
     private let bubbleDiameter: CGFloat = 44
     private let horizontalPadding: CGFloat = 10 // inner padding from track edge
@@ -323,14 +324,11 @@ private struct BubbleBar: View {
                 }
             }()
             
-            // Where the bubble would be without an active bubble-drag
-            let restingX = baseX
-            
-            // Active bubble-drag position (clamped to track)
-            let draggedX = clamp(restingX + dragTranslation, min: leftX, max: rightX)
+            // Active bubble-drag position is computed relative to the frozen start X
+            let draggedX = clamp(dragStartX + dragTranslation, min: leftX, max: rightX)
             
             // Choose which x to render: dragged if in motion, otherwise base (follows external preview)
-            let bubbleX = isDragging ? draggedX : restingX
+            let bubbleX = isDragging ? draggedX : baseX
             
             ZStack {
                 // Track: liquid glass capsule
@@ -424,12 +422,16 @@ private struct BubbleBar: View {
                         if !isDragging {
                             dragStartIndex = currentIndex
                             didFireMidHaptic = false
+                            // Freeze the base position at drag start to avoid feedback loop
+                            dragStartX = baseX
                         }
                         isDragging = true
                         dragTranslation = value.translation.width
                         
+                        // Compute current x purely from frozen start + translation
+                        let x = clamp(dragStartX + dragTranslation, min: leftX, max: rightX)
+                        
                         // Midpoint crossing haptic
-                        let x = clamp(restingX + dragTranslation, min: leftX, max: rightX)
                         let crossed = (dragStartIndex == 0 && x >= midX) || (dragStartIndex == 1 && x <= midX)
                         if crossed && !didFireMidHaptic {
                             selectionHaptic()
@@ -448,7 +450,7 @@ private struct BubbleBar: View {
                         onScrubChanged(p)
                     }
                     .onEnded { value in
-                        let x = clamp(restingX + value.translation.width, min: leftX, max: rightX)
+                        let x = clamp(dragStartX + value.translation.width, min: leftX, max: rightX)
                         let targetIndex = (x >= midX) ? 1 : 0
                         
                         isDragging = false
