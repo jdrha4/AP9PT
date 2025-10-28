@@ -173,19 +173,62 @@ struct ContentView: View {
                 .ignoresSafeArea()
             )
             .safeAreaInset(edge: .bottom) {
-                BottomBar(
+                BubbleBar(
                     currentTab: $currentTab,
+                    previewProgress: progress, // keep bubble in sync with page preview
                     onSelect: { target in
                         guard target != currentTab else { return }
-                        // Button taps should still animate a full switch.
                         withAnimation(.easeInOut(duration: 0.28)) {
                             currentTab = target
                             dragOffset = 0
                         }
+                    },
+                    onScrubChanged: { p in
+                        // p is 0...1 progress from current tab toward the other end.
+                        // Map to the same dragOffset semantics used by the full-screen gesture.
+                        switch currentTab {
+                        case .home:
+                            // Bubble moves right -> pages move left (negative)
+                            dragOffset = -p * width
+                        case .search:
+                            // Bubble moves left -> pages move right (positive)
+                            dragOffset = p * width
+                        }
+                    },
+                    onScrubEnded: { target in
+                        // Commit or cancel the preview, matching the same continuity logic
+                        let oldDrag = dragOffset
+                        switch (currentTab, target) {
+                        case (.home, .some(.search)):
+                            // Commit to Search; preserve continuity
+                            let currentSearchOffset = width + oldDrag
+                            withAnimation(nil) {
+                                currentTab = .search
+                                dragOffset = currentSearchOffset
+                            }
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                dragOffset = 0
+                            }
+                        case (.search, .some(.home)):
+                            // Commit to Home; preserve continuity
+                            let currentHomeOffset = -width + oldDrag
+                            withAnimation(nil) {
+                                currentTab = .home
+                                dragOffset = currentHomeOffset
+                            }
+                            withAnimation(.easeInOut(duration: 0.28)) {
+                                dragOffset = 0
+                            }
+                        default:
+                            // Cancel -> snap back
+                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                dragOffset = 0
+                            }
+                        }
                     }
                 )
-                .frame(height: 50)
-                .background(.ultraThinMaterial)
+                .frame(height: 64)
+                .padding(.horizontal, 16)
                 .ignoresSafeArea(edges: .bottom)
                 .allowsHitTesting(!isShowingSettings) // prevent taps while settings overlay is up
             }
@@ -245,41 +288,220 @@ private struct HGestureChooser<G: Gesture>: ViewModifier {
     }
 }
 
-private struct BottomBar: View {
+// MARK: - Bubble Bar (Liquid Glass)
+
+private struct BubbleBar: View {
     @Binding var currentTab: AppTab
+    var previewProgress: CGFloat // 0...1 live page preview progress from ContentView
     var onSelect: (AppTab) -> Void
+    var onScrubChanged: (CGFloat) -> Void
+    var onScrubEnded: (AppTab?) -> Void
+    
+    @State private var dragTranslation: CGFloat = 0
+    @State private var dragStartIndex: Int = 0
+    @State private var didFireMidHaptic: Bool = false
+    
+    private let bubbleDiameter: CGFloat = 44
+    private let horizontalPadding: CGFloat = 10 // inner padding from track edge
+    private let trackHeight: CGFloat = 48
     
     var body: some View {
-        HStack(spacing: 24) {
-            Button {
-                onSelect(.home)
-            } label: {
-                VStack(spacing: 2) {
-                    Image(systemName: "house.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                    Text("Home")
-                        .font(.footnote)
-                }
-                .foregroundColor(currentTab == .home ? .white : .white.opacity(0.7))
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.plain)
+        GeometryReader { geo in
+            let width = max(geo.size.width, bubbleDiameter + 2 * horizontalPadding)
+            let leftX = horizontalPadding + bubbleDiameter / 2
+            let rightX = width - horizontalPadding - bubbleDiameter / 2
+            let span = max(1, rightX - leftX)
+            let midX = (leftX + rightX) / 2
             
-            Button {
-                onSelect(.search)
-            } label: {
-                VStack(spacing: 2) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 18, weight: .semibold))
-                    Text("Search")
-                        .font(.footnote)
+            // Base position driven by external page preview (when not dragging the bubble)
+            let baseX: CGFloat = {
+                switch currentIndex {
+                case 0: // Home -> moving toward right
+                    return leftX + clamp(previewProgress, min: 0, max: 1) * span
+                default: // Search -> moving toward left
+                    return rightX - clamp(previewProgress, min: 0, max: 1) * span
                 }
-                .foregroundColor(currentTab == .search ? .white : .white.opacity(0.7))
-                .frame(maxWidth: .infinity)
+            }()
+            
+            // Where the bubble would be without an active bubble-drag
+            let restingX = baseX
+            
+            // Active bubble-drag position (clamped to track)
+            let draggedX = clamp(restingX + dragTranslation, min: leftX, max: rightX)
+            
+            // Choose which x to render: dragged if in motion, otherwise base (follows external preview)
+            let bubbleX = isDragging ? draggedX : restingX
+            
+            ZStack {
+                // Track: liquid glass capsule
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                    )
+                    .overlay(
+                        // Subtle inner shadow/top highlight for glass feel
+                        Capsule(style: .continuous)
+                            .fill(
+                                LinearGradient(colors: [Color.white.opacity(0.18), .clear],
+                                               startPoint: .top, endPoint: .bottom)
+                            )
+                            .blendMode(.plusLighter)
+                            .opacity(0.7)
+                    )
+                    .frame(height: trackHeight)
+                    .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
+                
+                // Moving bubble
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.28), lineWidth: 1)
+                    )
+                    .overlay(
+                        Circle()
+                            .fill(
+                                LinearGradient(colors: [Color.white.opacity(0.25), .clear],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                            )
+                            .blur(radius: 0.5)
+                            .blendMode(.plusLighter)
+                            .opacity(0.8)
+                    )
+                    .frame(width: bubbleDiameter, height: bubbleDiameter)
+                    .position(x: bubbleX, y: trackHeight / 2)
+                    // Animate only when tabs change; live preview is driven directly (no lag)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentTab)
+                
+                // Icons/labels (non-interactive; just for context)
+                HStack {
+                    VStack(spacing: 2) {
+                        Image(systemName: "house.fill")
+//                            .font(.system(size: 17, weight: .semibold))
+//                        Text("Home").font(.caption2)
+                    }
+                    .foregroundColor(currentIndex == 0 ? .white : .white.opacity(0.7))
+                    Spacer()
+                    VStack(spacing: 2) {
+                        Image(systemName: "magnifyingglass")
+//                            .font(.system(size: 17, weight: .semibold))
+//                        Text("Search").font(.caption2)
+                    }
+                    .foregroundColor(currentIndex == 1 ? .white : .white.opacity(0.7))
+                }
+                .padding(.horizontal, 22)
+                .frame(height: trackHeight)
+                .allowsHitTesting(false)
+                
+                // Tap zones at ends for instant switch
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if currentIndex != 0 {
+                                onSelect(.home)
+                                lightHaptic()
+                            }
+                        }
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if currentIndex != 1 {
+                                onSelect(.search)
+                                lightHaptic()
+                            }
+                        }
+                }
+                .frame(height: trackHeight)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .gesture(
+                // Start preview immediately on first pixel
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !isDragging {
+                            dragStartIndex = currentIndex
+                            didFireMidHaptic = false
+                        }
+                        isDragging = true
+                        dragTranslation = value.translation.width
+                        
+                        // Midpoint crossing haptic
+                        let x = clamp(restingX + dragTranslation, min: leftX, max: rightX)
+                        let crossed = (dragStartIndex == 0 && x >= midX) || (dragStartIndex == 1 && x <= midX)
+                        if crossed && !didFireMidHaptic {
+                            selectionHaptic()
+                            didFireMidHaptic = true
+                        }
+                        
+                        // Report normalized progress toward the other end (0...1)
+                        let p: CGFloat
+                        if currentIndex == 0 {
+                            // From left to right
+                            p = max(0, min(1, (x - leftX) / span))
+                        } else {
+                            // From right to left
+                            p = max(0, min(1, (rightX - x) / span))
+                        }
+                        onScrubChanged(p)
+                    }
+                    .onEnded { value in
+                        let x = clamp(restingX + value.translation.width, min: leftX, max: rightX)
+                        let targetIndex = (x >= midX) ? 1 : 0
+                        
+                        isDragging = false
+                        dragTranslation = 0
+                        
+                        if targetIndex != currentIndex {
+                            onScrubEnded(targetIndex == 0 ? .home : .search)
+                        } else {
+                            onScrubEnded(nil) // cancel
+                        }
+                    }
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Page scrubber")
+            .accessibilityValue(currentIndex == 0 ? "Home" : "Search")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment:
+                    if currentIndex == 0 { onSelect(.search) }
+                case .decrement:
+                    if currentIndex == 1 { onSelect(.home) }
+                default:
+                    break
+                }
+            }
         }
-        .padding(.horizontal, 16)
+        .frame(height: trackHeight)
+    }
+    
+    // MARK: - Local state
+    
+    @State private var isDragging: Bool = false
+    
+    private var currentIndex: Int {
+        currentTab == .home ? 0 : 1
+    }
+    
+    // MARK: - Haptics
+    
+    private func selectionHaptic() {
+        let gen = UISelectionFeedbackGenerator()
+        gen.selectionChanged()
+    }
+    
+    private func lightHaptic() {
+        let gen = UIImpactFeedbackGenerator(style: .soft)
+        gen.impactOccurred()
+    }
+    
+    // MARK: - Utilities
+    
+    private func clamp(_ value: CGFloat, min: CGFloat, max: CGFloat) -> CGFloat {
+        Swift.min(Swift.max(value, min), max)
     }
 }
 
