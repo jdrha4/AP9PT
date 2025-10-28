@@ -172,65 +172,68 @@ struct ContentView: View {
                 .animation(.easeInOut(duration: 0.28), value: currentTab) // animate on button tab changes
                 .ignoresSafeArea()
             )
+            // Hide the BubbleBar entirely when settings is showing
             .safeAreaInset(edge: .bottom) {
-                BubbleBar(
-                    currentTab: $currentTab,
-                    previewProgress: progress, // keep bubble in sync with page preview
-                    onSelect: { target in
-                        guard target != currentTab else { return }
-                        withAnimation(.easeInOut(duration: 0.28)) {
-                            currentTab = target
-                            dragOffset = 0
-                        }
-                    },
-                    onScrubChanged: { p in
-                        // p is 0...1 progress from current tab toward the other end.
-                        // Map to the same dragOffset semantics used by the full-screen gesture.
-                        switch currentTab {
-                        case .home:
-                            // Bubble moves right -> pages move left (negative)
-                            dragOffset = -p * width
-                        case .search:
-                            // Bubble moves left -> pages move right (positive)
-                            dragOffset = p * width
-                        }
-                    },
-                    onScrubEnded: { target in
-                        // Commit or cancel the preview, matching the same continuity logic
-                        let oldDrag = dragOffset
-                        switch (currentTab, target) {
-                        case (.home, .some(.search)):
-                            // Commit to Search; preserve continuity
-                            let currentSearchOffset = width + oldDrag
-                            withAnimation(nil) {
-                                currentTab = .search
-                                dragOffset = currentSearchOffset
-                            }
+                if !isShowingSettings {
+                    BubbleBar(
+                        currentTab: $currentTab,
+                        previewProgress: progress, // keep bubble in sync with page preview
+                        onSelect: { target in
+                            guard target != currentTab else { return }
                             withAnimation(.easeInOut(duration: 0.28)) {
+                                currentTab = target
                                 dragOffset = 0
                             }
-                        case (.search, .some(.home)):
-                            // Commit to Home; preserve continuity
-                            let currentHomeOffset = -width + oldDrag
-                            withAnimation(nil) {
-                                currentTab = .home
-                                dragOffset = currentHomeOffset
+                        },
+                        onScrubChanged: { p in
+                            // p is 0...1 progress from current tab toward the other end.
+                            // Map to the same dragOffset semantics used by the full-screen gesture.
+                            switch currentTab {
+                            case .home:
+                                // Bubble moves right -> pages move left (negative)
+                                dragOffset = -p * width
+                            case .search:
+                                // Bubble moves left -> pages move right (positive)
+                                dragOffset = p * width
                             }
-                            withAnimation(.easeInOut(duration: 0.28)) {
-                                dragOffset = 0
-                            }
-                        default:
-                            // Cancel -> snap back
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
-                                dragOffset = 0
+                        },
+                        onScrubEnded: { target in
+                            // Commit or cancel the preview, matching the same continuity logic
+                            let oldDrag = dragOffset
+                            switch (currentTab, target) {
+                            case (.home, .some(.search)):
+                                // Commit to Search; preserve continuity
+                                let currentSearchOffset = width + oldDrag
+                                withAnimation(nil) {
+                                    currentTab = .search
+                                    dragOffset = currentSearchOffset
+                                }
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    dragOffset = 0
+                                }
+                            case (.search, .some(.home)):
+                                // Commit to Home; preserve continuity
+                                let currentHomeOffset = -width + oldDrag
+                                withAnimation(nil) {
+                                    currentTab = .home
+                                    dragOffset = currentHomeOffset
+                                }
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    dragOffset = 0
+                                }
+                            default:
+                                // Cancel -> snap back
+                                withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                                    dragOffset = 0
+                                }
                             }
                         }
-                    }
-                )
-                .frame(height: 64)
-                .padding(.horizontal, 16)
-                .ignoresSafeArea(edges: .bottom)
-                .allowsHitTesting(!isShowingSettings) // prevent taps while settings overlay is up
+                    )
+                    .padding(.horizontal, 16)
+                    .ignoresSafeArea(edges: .bottom)
+                    .allowsHitTesting(!isShowingSettings) // prevent taps while settings overlay is up
+                    .frame(height: 56) // shorter overall inset height
+                }
             }
         }
         // Track keyboard visibility to switch gesture behavior
@@ -302,15 +305,19 @@ private struct BubbleBar: View {
     @State private var didFireMidHaptic: Bool = false
     @State private var dragStartX: CGFloat = 0 // freeze base position at drag start
     
-    private let bubbleDiameter: CGFloat = 44
-    private let horizontalPadding: CGFloat = 10 // inner padding from track edge
-    private let trackHeight: CGFloat = 48
+    // Updated sizing for a shorter bar and a pill-shaped bubble
+    private let bubbleWidth: CGFloat = 58
+    private let bubbleHeight: CGFloat = 34
+    // Tiny inner padding so the pill stops ~3pt from the track edges
+    private let horizontalPadding: CGFloat = 3
+    private let trackHeight: CGFloat = 40
     
     var body: some View {
         GeometryReader { geo in
-            let width = max(geo.size.width, bubbleDiameter + 2 * horizontalPadding)
-            let leftX = horizontalPadding + bubbleDiameter / 2
-            let rightX = width - horizontalPadding - bubbleDiameter / 2
+            let width = max(geo.size.width, bubbleWidth + 2 * horizontalPadding)
+            // Allow the pill to approach the ends, respecting the tiny padding
+            let leftX = horizontalPadding + bubbleWidth / 2
+            let rightX = width - horizontalPadding - bubbleWidth / 2
             let span = max(1, rightX - leftX)
             let midX = (leftX + rightX) / 2
             
@@ -351,15 +358,15 @@ private struct BubbleBar: View {
                     .frame(height: trackHeight)
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
                 
-                // Moving bubble
-                Circle()
+                // Moving bubble (pill)
+                Capsule(style: .continuous)
                     .fill(.ultraThinMaterial)
                     .overlay(
-                        Circle()
+                        Capsule(style: .continuous)
                             .stroke(Color.white.opacity(0.28), lineWidth: 1)
                     )
                     .overlay(
-                        Circle()
+                        Capsule(style: .continuous)
                             .fill(
                                 LinearGradient(colors: [Color.white.opacity(0.25), .clear],
                                                startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -368,7 +375,7 @@ private struct BubbleBar: View {
                             .blendMode(.plusLighter)
                             .opacity(0.8)
                     )
-                    .frame(width: bubbleDiameter, height: bubbleDiameter)
+                    .frame(width: bubbleWidth, height: bubbleHeight)
                     .position(x: bubbleX, y: trackHeight / 2)
                     // Animate only when tabs change; live preview is driven directly (no lag)
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: currentTab)
@@ -377,19 +384,16 @@ private struct BubbleBar: View {
                 HStack {
                     VStack(spacing: 2) {
                         Image(systemName: "house.fill")
-//                            .font(.system(size: 17, weight: .semibold))
-//                        Text("Home").font(.caption2)
                     }
                     .foregroundColor(currentIndex == 0 ? .white : .white.opacity(0.7))
                     Spacer()
                     VStack(spacing: 2) {
                         Image(systemName: "magnifyingglass")
-//                            .font(.system(size: 17, weight: .semibold))
-//                        Text("Search").font(.caption2)
                     }
                     .foregroundColor(currentIndex == 1 ? .white : .white.opacity(0.7))
                 }
-                .padding(.horizontal, 22)
+                .padding(.leading, 19)   // 2pt closer on the left side
+                .padding(.trailing, 20)  // keep right side as-is
                 .frame(height: trackHeight)
                 .allowsHitTesting(false)
                 
@@ -417,9 +421,9 @@ private struct BubbleBar: View {
                 .frame(height: trackHeight)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            // Give the drag higher priority so it doesn’t wait for tap to fail
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 0)
+            // Use simultaneousGesture so taps are not preempted by drag
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 3)
                     .onChanged { value in
                         if !isDragging {
                             dragStartIndex = currentIndex
@@ -917,10 +921,6 @@ private struct SettingsView: View {
                     
                     // Saved city card with search/save
                     VStack(spacing: 12) {
-//                        Text("Default City")
-//                            .font(.headline)
-//                            .foregroundColor(.white.opacity(0.9))
-                        
                         Text(savedCity)
                             .font(.title2.weight(.semibold))
                             .foregroundColor(.white)
@@ -952,7 +952,6 @@ private struct SettingsView: View {
                                 }
                             }
                             .frame(maxWidth: .infinity)
-//                            .padding(.vertical, fieldBottomPadding)
                             .padding(.bottom, 20)
                         }
                         .padding(.horizontal)
