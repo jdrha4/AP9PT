@@ -398,6 +398,7 @@ private struct BubbleBar: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            if isDragging { return }
                             if currentIndex != 0 {
                                 onSelect(.home)
                                 lightHaptic()
@@ -406,6 +407,7 @@ private struct BubbleBar: View {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture {
+                            if isDragging { return }
                             if currentIndex != 1 {
                                 onSelect(.search)
                                 lightHaptic()
@@ -415,8 +417,8 @@ private struct BubbleBar: View {
                 .frame(height: trackHeight)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            .gesture(
-                // Start preview immediately on first pixel
+            // Give the drag higher priority so it doesn’t wait for tap to fail
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         if !isDragging {
@@ -839,7 +841,7 @@ private struct SearchView: View {
     
     private func formattedName(for s: GeoLocation) -> String {
         if let state = s.state, !state.isEmpty {
-            return "\(s.name), \(s.state), \(s.country)"
+            return "\(s.name), \(state), \(s.country)"
         } else {
             return "\(s.name), \(s.country)"
         }
@@ -1053,7 +1055,7 @@ private struct SettingsView: View {
     
     private func formattedName(for s: GeoLocation) -> String {
         if let state = s.state, !state.isEmpty {
-            return "\(s.name), \(s.state), \(s.country)"
+            return "\(s.name), \(state), \(s.country)"
         } else {
             return "\(s.name), \(s.country)"
         }
@@ -1120,7 +1122,7 @@ private struct SuggestionsList: View {
     
     private func formattedName(for s: GeoLocation) -> String {
         if let state = s.state, !state.isEmpty {
-            return "\(s.name), \(s.state), \(s.country)"
+            return "\(s.name), \(state), \(s.country)"
         } else {
             return "\(s.name), \(s.country)"
         }
